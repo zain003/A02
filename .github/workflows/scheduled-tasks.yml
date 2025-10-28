@@ -1,0 +1,158 @@
+name: Scheduled Tasks
+
+on:
+  schedule:
+    # Run daily at 2:00 AM UTC
+    - cron: '0 2 * * *'
+    # Run weekly on Sunday at 3:00 AM UTC
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+    inputs:
+      task:
+        description: 'Task to run'
+        required: true
+        default: 'data-refresh'
+        type: choice
+        options:
+          - data-refresh
+          - backup
+          - cleanup
+          - maintenance
+
+jobs:
+  data-refresh:
+    name: Refresh Satellite Data
+    runs-on: ubuntu-latest
+    if: github.event.schedule == '0 2 * * *' || github.event.inputs.task == 'data-refresh' || github.event_name == 'schedule'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18.x'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Run data scraping
+      run: |
+        echo "🔄 Starting data refresh at $(date)"
+        node run.js
+        echo "✅ Data refresh completed at $(date)"
+      timeout-minutes: 10
+    
+    - name: Upload refreshed data
+      uses: actions/upload-artifact@v4
+      with:
+        name: satellite-data-${{ github.run_number }}
+        path: public/data/
+        retention-days: 30
+      if: always()
+    
+    - name: Commit updated data
+      run: |
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git config --local user.name "github-actions[bot]"
+        git add public/data/
+        git diff --quiet && git diff --staged --quiet || git commit -m "chore: update satellite data [automated]"
+        # Uncomment to push changes
+        # git push
+      continue-on-error: true
+
+  backup:
+    name: Backup Data
+    runs-on: ubuntu-latest
+    if: github.event.schedule == '0 3 * * 0' || github.event.inputs.task == 'backup'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Create backup
+      run: |
+        echo "💾 Creating backup at $(date)"
+        mkdir -p backups
+        BACKUP_NAME="backup-$(date +%Y%m%d-%H%M%S).tar.gz"
+        tar -czf "backups/$BACKUP_NAME" public/data/ src/ run.js package.json
+        echo "Backup created: $BACKUP_NAME"
+    
+    - name: Upload backup
+      uses: actions/upload-artifact@v4
+      with:
+        name: weekly-backup-${{ github.run_number }}
+        path: backups/
+        retention-days: 90
+    
+    - name: Backup summary
+      run: |
+        echo "✅ Backup completed successfully"
+        echo "Backup stored in GitHub artifacts for 90 days"
+
+  cleanup:
+    name: Cleanup Old Data
+    runs-on: ubuntu-latest
+    if: github.event.inputs.task == 'cleanup' || github.event.schedule == '0 3 * * 0'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Clean old artifacts
+      run: |
+        echo "🧹 Cleaning up old data..."
+        # Remove files older than 30 days
+        find public/data/ -type f -mtime +30 -delete 2>/dev/null || true
+        echo "✅ Cleanup completed"
+    
+    - name: Clean npm cache
+      run: npm cache clean --force
+
+  maintenance:
+    name: System Maintenance
+    runs-on: ubuntu-latest
+    if: github.event.inputs.task == 'maintenance'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18.x'
+    
+    - name: Update dependencies
+      run: |
+        echo "🔧 Running maintenance tasks..."
+        npm install
+        npm audit fix || true
+        npm outdated || true
+    
+    - name: System health check
+      run: |
+        echo "📊 System Health Report"
+        echo "Node version: $(node --version)"
+        echo "NPM version: $(npm --version)"
+        echo "Disk usage:"
+        df -h || true
+        echo "✅ Maintenance completed"
+
+  notify:
+    name: Task Summary
+    runs-on: ubuntu-latest
+    needs: [data-refresh, backup, cleanup, maintenance]
+    if: always()
+    
+    steps:
+    - name: Generate summary
+      run: |
+        echo "📊 Scheduled Tasks Summary"
+        echo "=========================="
+        echo "Data Refresh: ${{ needs.data-refresh.result }}"
+        echo "Backup: ${{ needs.backup.result }}"
+        echo "Cleanup: ${{ needs.cleanup.result }}"
+        echo "Maintenance: ${{ needs.maintenance.result }}"

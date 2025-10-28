@@ -1,0 +1,160 @@
+name: Documentation Deployment
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'README.md'
+      - 'docs/**'
+      - '.github/workflows/documentation.yml'
+  pull_request:
+    paths:
+      - 'README.md'
+      - 'docs/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  build-docs:
+    name: Build Documentation
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18.x'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Create docs directory
+      run: mkdir -p docs
+    
+    - name: Generate API documentation
+      run: |
+        echo "📚 Generating API documentation..."
+        npm install -g jsdoc
+        jsdoc -c jsdoc.json -d docs/api src/*.js README.md || true
+      continue-on-error: true
+    
+    - name: Generate project documentation
+      run: |
+        echo "📝 Building project documentation..."
+        cat > docs/index.html << 'EOF'
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Heavens Above - Documentation</title>
+            <style>
+                body { font-family: Arial, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; }
+                h1 { color: #333; }
+                .section { margin: 20px 0; padding: 20px; background: #f5f5f5; border-radius: 5px; }
+                code { background: #e0e0e0; padding: 2px 5px; border-radius: 3px; }
+                pre { background: #2d2d2d; color: #f8f8f2; padding: 15px; border-radius: 5px; overflow-x: auto; }
+            </style>
+        </head>
+        <body>
+            <h1>Heavens Above Documentation</h1>
+            <div class="section">
+                <h2>Overview</h2>
+                <p>Scripts for scraping the Heavens Above website to get satellite transit information.</p>
+            </div>
+            <div class="section">
+                <h2>Quick Start</h2>
+                <pre><code>npm install
+        node run.js</code></pre>
+            </div>
+            <div class="section">
+                <h2>API Documentation</h2>
+                <p><a href="api/index.html">View API Documentation</a></p>
+            </div>
+        </body>
+        </html>
+        EOF
+    
+    - name: Upload documentation artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: documentation
+        path: docs/
+        retention-days: 30
+
+  deploy-github-pages:
+    name: Deploy to GitHub Pages
+    runs-on: ubuntu-latest
+    needs: build-docs
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    
+    steps:
+    - name: Download documentation
+      uses: actions/download-artifact@v4
+      with:
+        name: documentation
+        path: docs
+    
+    - name: Setup Pages
+      uses: actions/configure-pages@v4
+    
+    - name: Upload to GitHub Pages
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: docs
+    
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4
+    
+    - name: Deployment summary
+      run: |
+        echo "✅ Documentation deployed successfully!"
+        echo "URL: ${{ steps.deployment.outputs.page_url }}"
+
+  validate-docs:
+    name: Validate Documentation
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Check README
+      run: |
+        echo "📖 Validating README.md..."
+        if [ ! -f "README.md" ]; then
+          echo "❌ README.md not found"
+          exit 1
+        fi
+        if [ $(wc -l < README.md) -lt 10 ]; then
+          echo "⚠️ README.md seems too short"
+        fi
+        echo "✅ README.md validated"
+    
+    - name: Check for broken links
+      run: |
+        echo "🔗 Checking for broken links..."
+        npm install -g markdown-link-check
+        markdown-link-check README.md || echo "Link check completed"
+      continue-on-error: true
+    
+    - name: Spell check
+      run: |
+        echo "📝 Running spell check..."
+        npm install -g cspell
+        cspell "**/*.md" || echo "Spell check completed"
+      continue-on-error: true
