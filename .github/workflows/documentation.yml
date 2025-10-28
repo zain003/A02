@@ -3,13 +3,8 @@ name: Documentation Deployment
 on:
   push:
     branches: [ main, master ]
-    paths:
-      - 'README.md'
-      - 'docs/**'
   pull_request:
-    paths:
-      - 'README.md'
-      - 'docs/**'
+    branches: [ main, master ]
   workflow_dispatch:
 
 permissions:

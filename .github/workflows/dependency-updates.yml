@@ -1,12 +1,11 @@
 name: Dependency Updates
 
 on:
+  push:
+    branches: [ main, master ]
   schedule:
     - cron: '0 9 * * 1'
   workflow_dispatch:
-  push:
-    paths:
-      - 'package.json'
 
 jobs:
   check-updates:
