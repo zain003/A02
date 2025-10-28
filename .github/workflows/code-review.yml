@@ -25,10 +25,8 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '18.x'
-        cache: 'npm'
-    
-    - name: Install dependencies
-      run: npm ci
+            - name: Install dependencies
+      run: npm install
     
     - name: Install code quality tools
       run: |
@@ -80,10 +78,8 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '18.x'
-        cache: 'npm'
-    
-    - name: Install dependencies
-      run: npm ci
+            - name: Install dependencies
+      run: npm install
     
     - name: Run npm audit
       id: audit
@@ -131,9 +127,7 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '18.x'
-        cache: 'npm'
-    
-    - name: Check file naming conventions
+            - name: Check file naming conventions
       run: |
         echo "📝 Checking file naming conventions..."
         find . -name "*.js" -not -path "./node_modules/*" | while read file; do
