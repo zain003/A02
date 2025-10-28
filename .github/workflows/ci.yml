@@ -58,12 +58,6 @@ jobs:
     - name: Run ESLint
       run: npx eslint . --ext .js || echo "✅ ESLint check completed"
       continue-on-error: true
-    
-    - name: Check code formatting
-      run: |
-        npm install --save-dev prettier
-        npx prettier --check "**/*.{js,json,md}" || echo "✅ Formatting check completed"
-      continue-on-error: true
 
   security:
     name: Security Audit

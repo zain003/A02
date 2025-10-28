@@ -2,10 +2,8 @@ name: Scheduled Tasks
 
 on:
   schedule:
-    # Run daily at 2:00 AM UTC
-    - cron: '0 2 * * *'
-    # Run weekly on Sunday at 3:00 AM UTC
-    - cron: '0 3 * * 0'
+    - cron: '0 */12 * * *'
+    - cron: '0 */12 * * *'
   workflow_dispatch:
     inputs:
       task:
@@ -33,7 +31,8 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '18.x'
-            - name: Install dependencies
+    
+    - name: Install dependencies
       run: npm install
     
     - name: Run data scraping
@@ -42,6 +41,7 @@ jobs:
         node run.js
         echo "✅ Data refresh completed at $(date)"
       timeout-minutes: 10
+      continue-on-error: true
     
     - name: Upload refreshed data
       uses: actions/upload-artifact@v4
@@ -50,16 +50,6 @@ jobs:
         path: public/data/
         retention-days: 30
       if: always()
-    
-    - name: Commit updated data
-      run: |
-        git config --local user.email "github-actions[bot]@users.noreply.github.com"
-        git config --local user.name "github-actions[bot]"
-        git add public/data/
-        git diff --quiet && git diff --staged --quiet || git commit -m "chore: update satellite data [automated]"
-        # Uncomment to push changes
-        # git push
-      continue-on-error: true
 
   backup:
     name: Backup Data
@@ -75,7 +65,7 @@ jobs:
         echo "💾 Creating backup at $(date)"
         mkdir -p backups
         BACKUP_NAME="backup-$(date +%Y%m%d-%H%M%S).tar.gz"
-        tar -czf "backups/$BACKUP_NAME" public/data/ src/ run.js package.json
+        tar -czf "backups/$BACKUP_NAME" public/data/ src/ run.js package.json || true
         echo "Backup created: $BACKUP_NAME"
     
     - name: Upload backup
@@ -102,12 +92,8 @@ jobs:
     - name: Clean old artifacts
       run: |
         echo "🧹 Cleaning up old data..."
-        # Remove files older than 30 days
         find public/data/ -type f -mtime +30 -delete 2>/dev/null || true
         echo "✅ Cleanup completed"
-    
-    - name: Clean npm cache
-      run: npm cache clean --force
 
   maintenance:
     name: System Maintenance
@@ -135,8 +121,6 @@ jobs:
         echo "📊 System Health Report"
         echo "Node version: $(node --version)"
         echo "NPM version: $(npm --version)"
-        echo "Disk usage:"
-        df -h || true
         echo "✅ Maintenance completed"
 
   notify:

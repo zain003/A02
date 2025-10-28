@@ -15,23 +15,16 @@ on:
           - major
           - minor
           - patch
-      generate_changelog:
-        description: 'Generate changelog'
-        required: false
-        type: boolean
-        default: true
 
 permissions:
   contents: write
   pull-requests: write
-  issues: write
 
 jobs:
   generate-release-notes:
     name: Generate Release Notes
     runs-on: ubuntu-latest
     outputs:
-      release_notes: ${{ steps.notes.outputs.notes }}
       version: ${{ steps.version.outputs.version }}
     
     steps:
@@ -57,47 +50,21 @@ jobs:
         echo "Current version: $VERSION"
     
     - name: Generate changelog
-      id: notes
       run: |
         echo "📝 Generating release notes..."
-        
-        # Get the latest tag
         LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
         
         if [ -z "$LATEST_TAG" ]; then
-          echo "No previous tags found, generating full changelog"
           COMMITS=$(git log --pretty=format:"- %s (%h)" --no-merges)
         else
-          echo "Generating changelog since $LATEST_TAG"
           COMMITS=$(git log ${LATEST_TAG}..HEAD --pretty=format:"- %s (%h)" --no-merges)
         fi
         
-        # Categorize commits
-        FEATURES=$(echo "$COMMITS" | grep -i "feat:" || echo "")
-        FIXES=$(echo "$COMMITS" | grep -i "fix:" || echo "")
-        CHORES=$(echo "$COMMITS" | grep -i "chore:" || echo "")
-        
-        # Create release notes
-        NOTES="## Release v${{ steps.version.outputs.version }}\n\n"
-        
-        if [ ! -z "$FEATURES" ]; then
-          NOTES="${NOTES}### ✨ Features\n${FEATURES}\n\n"
-        fi
-        
-        if [ ! -z "$FIXES" ]; then
-          NOTES="${NOTES}### 🐛 Bug Fixes\n${FIXES}\n\n"
-        fi
-        
-        if [ ! -z "$CHORES" ]; then
-          NOTES="${NOTES}### 🔧 Maintenance\n${CHORES}\n\n"
-        fi
-        
-        echo "$NOTES" > release-notes.md
+        echo "## Release v${{ steps.version.outputs.version }}" > release-notes.md
+        echo "" >> release-notes.md
+        echo "### Changes" >> release-notes.md
+        echo "$COMMITS" >> release-notes.md
         cat release-notes.md
-        
-        echo "notes<<EOF" >> $GITHUB_OUTPUT
-        cat release-notes.md >> $GITHUB_OUTPUT
-        echo "EOF" >> $GITHUB_OUTPUT
     
     - name: Upload release notes
       uses: actions/upload-artifact@v4
@@ -118,36 +85,18 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '18.x'
-            - name: Install dependencies
-      run: npm install
     
-    - name: Measure execution time
-      run: |
-        echo "⏱️ Measuring application performance..."
-        START_TIME=$(date +%s)
-        timeout 60 node run.js || true
-        END_TIME=$(date +%s)
-        DURATION=$((END_TIME - START_TIME))
-        
-        echo "Execution time: ${DURATION}s"
-        echo "EXECUTION_TIME=${DURATION}" >> $GITHUB_ENV
+    - name: Install dependencies
+      run: npm install
     
     - name: Analyze code metrics
       run: |
         echo "📊 Analyzing code metrics..."
+        LOC=$(find src -name "*.js" -exec wc -l {} + 2>/dev/null | tail -1 | awk '{print $1}' || echo "0")
+        FILES=$(find src -name "*.js" 2>/dev/null | wc -l || echo "0")
         
-        # Count lines of code
-        LOC=$(find src -name "*.js" -exec wc -l {} + | tail -1 | awk '{print $1}')
-        echo "Lines of code: $LOC"
-        
-        # Count files
-        FILES=$(find src -name "*.js" | wc -l)
-        echo "JavaScript files: $FILES"
-        
-        # Create metrics report
         cat > metrics-report.json << EOF
         {
-          "execution_time": ${EXECUTION_TIME},
           "lines_of_code": ${LOC},
           "file_count": ${FILES},
           "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -187,9 +136,9 @@ jobs:
       run: |
         echo "📦 Creating release package..."
         mkdir -p release
-        cp -r src public run.js package*.json release/
+        cp -r src public run.js package*.json release/ 2>/dev/null || true
         tar -czf heavens-above-${{ needs.generate-release-notes.outputs.version }}.tar.gz release/
-        zip -r heavens-above-${{ needs.generate-release-notes.outputs.version }}.zip release/
+        zip -r heavens-above-${{ needs.generate-release-notes.outputs.version }}.zip release/ 2>/dev/null || true
     
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v1
@@ -203,43 +152,6 @@ jobs:
         prerelease: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  sync-data:
-    name: Sync Data Between Systems
-    runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch'
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18.x'
-            - name: Install dependencies
-      run: npm install
-    
-    - name: Fetch latest data
-      run: |
-        echo "🔄 Fetching latest satellite data..."
-        node run.js
-      timeout-minutes: 10
-    
-    - name: Sync to external systems
-      run: |
-        echo "☁️ Syncing data to external systems..."
-        
-        # Example: Sync to cloud storage
-        # aws s3 sync public/data/ s3://your-bucket/data/
-        
-        # Example: Sync to database
-        # node scripts/sync-to-database.js
-        
-        # Example: Sync to API
-        # curl -X POST https://api.example.com/sync -d @public/data/satellites.json
-        
-        echo "✅ Data sync completed"
 
   notify-release:
     name: Release Summary

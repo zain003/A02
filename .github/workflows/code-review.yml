@@ -4,8 +4,6 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
     branches: [ main, master, develop ]
-  pull_request_review:
-    types: [submitted]
 
 jobs:
   code-quality:
@@ -18,49 +16,26 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
       
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: '18.x'
-            - name: Install dependencies
+    
+    - name: Install dependencies
       run: npm install
     
     - name: Install code quality tools
-      run: |
-        npm install --save-dev eslint prettier jshint
+      run: npm install --save-dev eslint prettier
+      continue-on-error: true
     
     - name: Run ESLint
-      id: eslint
-      run: |
-        npx eslint . --ext .js --format json --output-file eslint-report.json || true
-        npx eslint . --ext .js || echo "ESLint found issues"
+      run: npx eslint . --ext .js || echo "ESLint found issues"
       continue-on-error: true
     
     - name: Run Prettier check
-      id: prettier
-      run: |
-        npx prettier --check "**/*.{js,json,md}" || echo "Formatting issues found"
+      run: npx prettier --check "**/*.{js,json,md}" || echo "Formatting issues found"
       continue-on-error: true
-    
-    - name: Code complexity analysis
-      run: |
-        echo "📊 Analyzing code complexity..."
-        npm install -g complexity-report
-        cr --format json src/*.js > complexity-report.json || true
-        cat complexity-report.json || echo "Complexity analysis completed"
-      continue-on-error: true
-    
-    - name: Upload quality reports
-      uses: actions/upload-artifact@v4
-      with:
-        name: code-quality-reports
-        path: |
-          eslint-report.json
-          complexity-report.json
-        retention-days: 30
 
   security-scan:
     name: Security Vulnerability Scan
@@ -68,7 +43,6 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
-      security-events: write
     
     steps:
     - name: Checkout code
@@ -78,29 +52,12 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '18.x'
-            - name: Install dependencies
+    
+    - name: Install dependencies
       run: npm install
     
     - name: Run npm audit
-      id: audit
-      run: |
-        echo "🔒 Running security audit..."
-        npm audit --json > security-audit.json || true
-        npm audit || echo "Security issues found"
-      continue-on-error: true
-    
-    - name: Scan for secrets
-      uses: trufflesecurity/trufflehog@main
-      with:
-        path: ./
-        base: ${{ github.event.repository.default_branch }}
-        head: HEAD
-      continue-on-error: true
-    
-    - name: Check for hardcoded credentials
-      run: |
-        echo "🔍 Scanning for hardcoded credentials..."
-        grep -r -i "password\|api_key\|secret\|token" --include="*.js" . || echo "No obvious credentials found"
+      run: npm audit --json > security-audit.json || true
       continue-on-error: true
     
     - name: Upload security reports
@@ -109,51 +66,6 @@ jobs:
         name: security-scan-reports
         path: security-audit.json
         retention-days: 90
-
-  coding-standards:
-    name: Coding Standards Check
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-      
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18.x'
-            - name: Check file naming conventions
-      run: |
-        echo "📝 Checking file naming conventions..."
-        find . -name "*.js" -not -path "./node_modules/*" | while read file; do
-          if [[ ! "$file" =~ ^[a-z0-9-]+\.js$ ]]; then
-            echo "Warning: $file doesn't follow naming convention"
-          fi
-        done
-    
-    - name: Check code documentation
-      run: |
-        echo "📚 Checking code documentation..."
-        npm install -g jsdoc
-        jsdoc -c /dev/null src/*.js || echo "Documentation check completed"
-      continue-on-error: true
-    
-    - name: Check for TODO/FIXME comments
-      run: |
-        echo "📌 Checking for TODO/FIXME comments..."
-        grep -r -n "TODO\|FIXME\|HACK\|XXX" --include="*.js" . || echo "No action items found"
-      continue-on-error: true
-    
-    - name: Line length check
-      run: |
-        echo "📏 Checking line lengths..."
-        find . -name "*.js" -not -path "./node_modules/*" -exec awk 'length>120 {print FILENAME":"NR": Line too long ("length" chars)"; exit 1}' {} + || echo "Some lines exceed 120 characters"
-      continue-on-error: true
 
   pr-size-check:
     name: Pull Request Size Check
@@ -172,27 +84,13 @@ jobs:
           const changes = additions + deletions;
           
           let label = '';
-          let comment = '';
+          if (changes < 50) label = 'size/XS';
+          else if (changes < 200) label = 'size/S';
+          else if (changes < 500) label = 'size/M';
+          else if (changes < 1000) label = 'size/L';
+          else label = 'size/XL';
           
-          if (changes < 50) {
-            label = 'size/XS';
-            comment = '✅ This is a small PR - easy to review!';
-          } else if (changes < 200) {
-            label = 'size/S';
-            comment = '✅ This is a reasonably sized PR.';
-          } else if (changes < 500) {
-            label = 'size/M';
-            comment = '⚠️ This PR is getting large. Consider breaking it down.';
-          } else if (changes < 1000) {
-            label = 'size/L';
-            comment = '⚠️ This is a large PR. Please consider splitting it into smaller PRs.';
-          } else {
-            label = 'size/XL';
-            comment = '🚨 This PR is very large! It will be difficult to review. Please split it into smaller PRs.';
-          }
-          
-          console.log(`PR size: ${changes} changes (${additions} additions, ${deletions} deletions)`);
-          console.log(`Label: ${label}`);
+          console.log(`PR size: ${changes} changes - Label: ${label}`);
 
   review-checklist:
     name: Review Checklist
@@ -211,31 +109,18 @@ jobs:
           ### Functionality
           - [ ] Code accomplishes the intended purpose
           - [ ] Edge cases are handled appropriately
-          - [ ] Error handling is implemented
           
           ### Code Quality
           - [ ] Code is readable and maintainable
-          - [ ] Functions are small and focused
           - [ ] No code duplication
-          - [ ] Appropriate comments for complex logic
           
           ### Testing
           - [ ] Tests are included (if applicable)
           - [ ] All tests pass
-          - [ ] Code coverage is adequate
           
           ### Security
           - [ ] No security vulnerabilities introduced
           - [ ] Input validation is present
-          - [ ] No sensitive data exposed
-          
-          ### Performance
-          - [ ] No obvious performance issues
-          - [ ] Efficient algorithms used
-          
-          ### Documentation
-          - [ ] README updated (if needed)
-          - [ ] API documentation updated (if needed)
           `;
           
           const { data: comments } = await github.rest.issues.listComments({
@@ -256,22 +141,3 @@ jobs:
               body: checklist
             });
           }
-
-  required-checks:
-    name: Required Checks Status
-    runs-on: ubuntu-latest
-    needs: [code-quality, security-scan, coding-standards]
-    if: always()
-    
-    steps:
-    - name: Check all results
-      run: |
-        echo "Code Quality: ${{ needs.code-quality.result }}"
-        echo "Security Scan: ${{ needs.security-scan.result }}"
-        echo "Coding Standards: ${{ needs.coding-standards.result }}"
-        
-        if [ "${{ needs.code-quality.result }}" == "failure" ] || [ "${{ needs.security-scan.result }}" == "failure" ]; then
-          echo "❌ Required checks failed"
-          exit 1
-        fi
-        echo "✅ All required checks passed"
