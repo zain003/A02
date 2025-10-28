@@ -72,6 +72,7 @@ jobs:
   pr-size-check:
     name: Pull Request Size Check
     runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
     permissions:
       pull-requests: write
     
@@ -97,6 +98,7 @@ jobs:
   review-checklist:
     name: Review Checklist
     runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
     permissions:
       pull-requests: write
     
@@ -143,3 +145,19 @@ jobs:
               body: checklist
             });
           }
+  
+  workflow-summary:
+    name: Code Review Summary
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    needs: [code-quality, security-scan]
+    
+    steps:
+    - name: Summary
+      run: |
+        echo "✅ Code Review Workflow Completed"
+        echo "================================="
+        echo "Code Quality: ${{ needs.code-quality.result }}"
+        echo "Security Scan: ${{ needs.security-scan.result }}"
+        echo ""
+        echo "Note: PR-specific checks (size, checklist) only run on pull requests"
